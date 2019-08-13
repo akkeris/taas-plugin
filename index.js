@@ -26,8 +26,11 @@ function parseError(error) {
 let stream_restarts = 0
 async function taillogs(appkit, args){
   id = args.ID
+  if (stream_restarts == 0) {   
+     console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
+  }
   try {
-  if(stream_restarts > 1000) {
+  if(stream_restarts > 20) {
     return process.exit(1)
   }
   let req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/taillogs`, (res) => { 
@@ -35,6 +38,7 @@ async function taillogs(appkit, args){
       res.on('end', () => {
         stream_restarts++;
         args.ID=id
+        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
         taillogs(appkit, args);
       })
   });
@@ -42,9 +46,9 @@ async function taillogs(appkit, args){
     if (e.code === "ECONNRESET") {
       stream_restarts++;
         args.ID=id
+        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
         taillogs(appkit, args);
     }
-    return appkit.terminal.error(e)
   })
   req.setNoDelay(true)
   req.end()
