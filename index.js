@@ -25,6 +25,7 @@ function parseError(error) {
 
 let stream_restarts = 0
 async function taillogs(appkit, args){
+  id = args.ID
   try {
   if(stream_restarts > 1000) {
     return process.exit(1)
@@ -33,13 +34,15 @@ async function taillogs(appkit, args){
       res.pipe(process.stdout) 
       res.on('end', () => {
         stream_restarts++;
-        setTimeout(stream_logs.bind(null, appkit, colors, uri, payload), 1000); 
+        args.ID=id
+        taillogs(appkit, args);
       })
   });
   req.on('error', (e) => {
     if (e.code === "ECONNRESET") {
       stream_restarts++;
-      return setTimeout(stream_logs.bind(null, appkit, colors, uri, payload), 1000);
+        args.ID=id
+        taillogs(appkit, args);
     }
     return appkit.terminal.error(e)
   })
