@@ -26,35 +26,35 @@ function parseError(error) {
 }
 
 
-let stream_restarts = 0
-async function taillogs(appkit, args){
-  id = args.ID
-  if (stream_restarts == 0) {   
-     console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
+let streamRestarts = 0;
+async function taillogs(appkit, args) { // eslint-disable-line
+  const id = args.ID;
+  if (streamRestarts === 0) {
+    console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
   }
   try {
-  if(stream_restarts > 20) {
-    return process.exit(1)
-  }
-  let req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/taillogs`, (res) => { 
-      res.pipe(process.stdout) 
-      res.on('end', () => {
-        stream_restarts++;
-        args.ID=id
-        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
-        taillogs(appkit, args);
-      })
-  });
-  req.on('error', (e) => {
-    if (e.code === "ECONNRESET") {
-      stream_restarts++;
-        args.ID=id
-        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
-        taillogs(appkit, args);
+    if (streamRestarts > 20) {
+      return process.exit(1);
     }
-  })
-  req.setNoDelay(true)
-  req.end()
+    const req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/taillogs`, (res) => {
+      res.pipe(process.stdout);
+      res.on('end', () => {
+        streamRestarts++; // eslint-disable-line
+        args.ID = id; // eslint-disable-line
+        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
+        taillogs(appkit, args);
+      });
+    });
+    req.on('error', (e) => {
+      if (e.code === 'ECONNRESET') {
+        streamRestarts++; // eslint-disable-line
+        args.ID = id; // eslint-disable-line
+        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
+        taillogs(appkit, args);
+      }
+    });
+    req.setNoDelay(true);
+    req.end();
   } catch (err) {
     appkit.terminal.error(parseError(err));
   }
@@ -437,6 +437,13 @@ async function newRegister(appkit, args) {
       source: (answers, input) => searchApps(input),
     },
     {
+      name: 'testPreviews',
+      type: 'list',
+      message: 'Do you want to test preview apps?',
+      choices: ['No', 'Yes'],
+      filter: input => (input === 'Yes'),
+    },
+    {
       name: 'job',
       type: 'input',
       message: 'Test Name:',
@@ -559,6 +566,7 @@ async function newRegister(appkit, args) {
       timeout: answers.timeout,
       startdelay: answers.startDelay,
       slackchannel: answers.slackChannel,
+      testpreviews: answers.testPreviews,
       env: answers.envVars
         .replace(/"/g, '')
         .split(' ')
@@ -636,6 +644,8 @@ async function updateJob(appkit, args) {
         value: pair.split('=')[1],
       }));
       resp[property] = env;
+    } else if (property === 'testpreviews') {
+      resp[property] = value === 'true' || value === 't';
     } else {
       resp[property] = value;
     }
@@ -650,11 +660,15 @@ async function updateJob(appkit, args) {
 async function job(appkit, args) {
   try {
     const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    if (jobItem.ispreview) {
+      console.log(appkit.terminal.markdown('###===### !!Preview App Test!! ###===###'));
+    }
     console.log(appkit.terminal.markdown('^^ properties: ^^'));
     appkit.terminal.vtable({
       id: jobItem.id,
       test: `${jobItem.job}-${jobItem.jobspace}`,
       app: `${jobItem.app}-${jobItem.space}`,
+      testpreviews: jobItem.testpreviews,
       action: jobItem.action,
       result: jobItem.result,
       image: jobItem.image,
@@ -756,6 +770,7 @@ async function list(appkit) {
       app: `${test.app}-${test.space}`,
       action: test.action,
       result: test.result,
+      preview: test.ispreview ? 'true' : 'false',
     })));
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -786,7 +801,7 @@ function init(appkit) {
       alias: 'p',
       string: true,
       description: 'property name (timeout, transitionfrom, env, etc).',
-      choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay', 'slackchannel', 'command'],
+      choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay', 'slackchannel', 'command', 'testpreviews'],
       demand: true,
     },
     value: {
@@ -856,7 +871,6 @@ function init(appkit) {
     .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
     .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
     .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit));
-    
 
   if (process.env.TAAS_BETA === 'true') {
     appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
