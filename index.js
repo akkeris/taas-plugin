@@ -571,7 +571,7 @@ async function listRuns(appkit, args) {
     );
 
     if (!runs) {
-      appkit.terminal.error('no runs');
+      throw new Error('No runs!');
     }
 
     appkit.terminal.table(runs.map(runItem => ({
