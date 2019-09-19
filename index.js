@@ -1,4 +1,5 @@
 const inquirer = require('inquirer');
+const https = require('https');
 const fuzzy = require('fuzzy');
 inquirer.registerPrompt('autocomplete', require('inquirer-autocomplete-prompt'));
 
@@ -21,6 +22,41 @@ function parseError(error) {
     }
   } else {
     return error.toString();
+  }
+}
+
+
+let stream_restarts = 0
+async function taillogs(appkit, args){
+  id = args.ID
+  if (stream_restarts == 0) {   
+     console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
+  }
+  try {
+  if(stream_restarts > 20) {
+    return process.exit(1)
+  }
+  let req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/taillogs`, (res) => { 
+      res.pipe(process.stdout) 
+      res.on('end', () => {
+        stream_restarts++;
+        args.ID=id
+        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
+        taillogs(appkit, args);
+      })
+  });
+  req.on('error', (e) => {
+    if (e.code === "ECONNRESET") {
+      stream_restarts++;
+        args.ID=id
+        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
+        taillogs(appkit, args);
+    }
+  })
+  req.setNoDelay(true)
+  req.end()
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
   }
 }
 
@@ -820,11 +856,13 @@ function init(appkit) {
     .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
     .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
     .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit));
+    
 
   if (process.env.TAAS_BETA === 'true') {
     appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
     appkit.args.command('taas:config:multiunset KEY', 'BETA: unset an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiUnSet.bind(null, appkit));
     appkit.args.command('taas:tests:audits ID', 'BETA: Get audits for a test', {}, audits.bind(null, appkit));
+    appkit.args.command('taas:tail ID', 'BETA: Tail Logs', {}, taillogs.bind(null, appkit));
   }
 }
 
