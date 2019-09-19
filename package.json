@@ -17,7 +17,9 @@
   },
   "homepage": "https://github.com/akkeris/taas-plugin#readme",
   "dependencies": {
-    "inquirer": "^6.4.1"
+    "fuzzy": "^0.1.3",
+    "inquirer": "^6.2.2",
+    "inquirer-autocomplete-prompt": "^1.0.1"
   },
   "devDependencies": {
     "eslint": "^5.16.0",

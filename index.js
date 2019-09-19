@@ -1,5 +1,8 @@
 const inquirer = require('inquirer');
 const https = require('https');
+const fuzzy = require('fuzzy');
+inquirer.registerPrompt('autocomplete', require('inquirer-autocomplete-prompt'));
+
 // This will be removed when TaaS is made a first-class citizen
 const DIAGNOSTICS_API_URL = process.env.DIAGNOSTICS_API_URL || 'https://alamo-self-diagnostics.octanner.io';
 
@@ -381,6 +384,11 @@ async function addHooks(appkit, args) {
 }
 
 async function newRegister(appkit, args) {
+  const appNames = (await appkit.api.get('/apps')).map(i => i.name);
+  if (appNames.length === 0) {
+    appkit.terminal.error(appkit.terminal.markdown('###===### No apps were found. At least one app must exist in order to use this command.'));
+  }
+
   // Validator Functions
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
 
@@ -418,34 +426,26 @@ async function newRegister(appkit, args) {
     return true;
   };
 
-  const validName = (input) => {
-    if (input.length === 0) {
-      return 'Required Field';
-    }
-    if (input.split('-').length === 1 || input.split('-').some(a => a.length === 0)) {
-      // No '-' exists in the string, or there's a dangling '-' (i.e. 'app-')
-      return 'Please enter the full name of the app (e.g. "app-space")';
-    }
-    return true;
-  };
+  const searchApps = async input => fuzzy.filter((input || ''), appNames).map(e => e.original);
 
   const questions = [
     {
       name: 'app',
-      type: 'input',
-      message: 'App Name:',
-      validate: validName,
+      type: 'autocomplete',
+      message: 'Select an App',
+      suffix: ':',
+      source: (answers, input) => searchApps(input),
     },
     {
       name: 'job',
       type: 'input',
-      message: 'Job Name:',
+      message: 'Test Name:',
       validate: isRequired,
     },
     {
       name: 'jobSpace',
       type: 'input',
-      message: 'Job Space:',
+      message: 'Test Space:',
       validate: isRequired,
     },
     {
@@ -457,9 +457,10 @@ async function newRegister(appkit, args) {
     },
     {
       name: 'image',
-      type: 'input',
-      message: 'App name (for image):',
-      validate: validName,
+      type: 'autocomplete',
+      message: 'Which app\'s image',
+      suffix: '?',
+      source: (answers, input) => searchApps(input),
       when: answers => !!answers.useAppImage,
       filter: input => `akkeris://${input}`,
     },
@@ -606,7 +607,7 @@ async function listRuns(appkit, args) {
     );
 
     if (!runs) {
-      appkit.terminal.error('no runs');
+      throw new Error('No runs!');
     }
 
     appkit.terminal.table(runs.map(runItem => ({
