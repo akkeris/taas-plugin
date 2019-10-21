@@ -26,35 +26,35 @@ function parseError(error) {
 }
 
 
-let stream_restarts = 0
-async function taillogs(appkit, args){
-  id = args.ID
-  if (stream_restarts == 0) {   
-     console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
+let stream_restarts = 0;
+async function taillogs(appkit, args) {
+  id = args.ID;
+  if (stream_restarts == 0) {
+    console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
   }
   try {
-  if(stream_restarts > 20) {
-    return process.exit(1)
-  }
-  let req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/taillogs`, (res) => { 
-      res.pipe(process.stdout) 
+    if (stream_restarts > 20) {
+      return process.exit(1);
+    }
+    const req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/taillogs`, (res) => {
+      res.pipe(process.stdout);
       res.on('end', () => {
         stream_restarts++;
-        args.ID=id
-        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
+        args.ID = id;
+        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
         taillogs(appkit, args);
-      })
-  });
-  req.on('error', (e) => {
-    if (e.code === "ECONNRESET") {
-      stream_restarts++;
-        args.ID=id
-        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'))
+      });
+    });
+    req.on('error', (e) => {
+      if (e.code === 'ECONNRESET') {
+        stream_restarts++;
+        args.ID = id;
+        console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
         taillogs(appkit, args);
-    }
-  })
-  req.setNoDelay(true)
-  req.end()
+      }
+    });
+    req.setNoDelay(true);
+    req.end();
   } catch (err) {
     appkit.terminal.error(parseError(err));
   }
@@ -451,15 +451,15 @@ async function newRegister(appkit, args) {
     {
       name: 'useAppImage',
       type: 'list',
-      message: 'Use an Akkeris app\'s image?',
-      choices: ['Yes - use an app\'s latest image', 'No - specify an image'],
-      filter: input => (input === 'Yes - use an app\'s latest image'),
+      message: 'Is test suite an Akkeris app?',
+      choices: ['Yes - select an app', 'No - specify an image'],
+      filter: input => (input === 'Yes - select an app'),
     },
     {
       name: 'image',
       type: 'autocomplete',
-      message: 'Which app\'s image',
-      suffix: '?',
+      message: 'Select the test suite app',
+      suffix: ':',
       source: (answers, input) => searchApps(input),
       when: answers => !!answers.useAppImage,
       filter: input => `akkeris://${input}`,
@@ -467,7 +467,7 @@ async function newRegister(appkit, args) {
     {
       name: 'image',
       type: 'input',
-      message: 'Image:',
+      message: 'Provide image location:',
       validate: isRequired,
       when: answers => !answers.useAppImage,
     },
@@ -856,7 +856,7 @@ function init(appkit) {
     .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
     .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
     .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit));
-    
+
 
   if (process.env.TAAS_BETA === 'true') {
     appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
