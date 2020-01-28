@@ -28,11 +28,12 @@ function parseError(error) {
 async function createcronjob(appkit, args) {
   try {
     const diag = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, plainType);
-    var cron={}
-    cron.job=diag.job
-    cron.jobspace=diag.jobspace
-    cron.cs=args.s
-    cron.command=args.c
+    const cron = {
+      job: diag.job,
+      jobspace: diag.jobspace,
+      cs: args.s,
+      command: args.c,
+    };
     const resp = await appkit.api.post(JSON.stringify(cron),`${DIAGNOSTICS_API_URL}/v1/cronjob`);
     appkit.terminal.vtable(resp);
   } catch (err) {
