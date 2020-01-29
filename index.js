@@ -34,7 +34,7 @@ async function createcronjob(appkit, args) {
       cs: args.s,
       command: args.c,
     };
-    const resp = await appkit.api.post(JSON.stringify(cron),`${DIAGNOSTICS_API_URL}/v1/cronjob`);
+    const resp = await appkit.api.post(JSON.stringify(cron), `${DIAGNOSTICS_API_URL}/v1/cronjob`);
     appkit.terminal.vtable(resp);
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -51,17 +51,17 @@ async function destroycronjob(appkit, args) {
 }
 
 
-async function getcronjobs(appkit, args) {
+async function getcronjobs(appkit) {
   try {
     const results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjobs`);
     if (!results || results.length < 1) {
-      appkit.terminal.error(appkit.terminal.markdown(`No cronjobs found`));
+      appkit.terminal.error(appkit.terminal.markdown('No cronjobs found'));
       return;
     }
     appkit.terminal.table(results.map((cronjob) => {
       const entry = {
         id: cronjob.id,
-        job: cronjob.job+"-"+cronjob.jobspace,
+        job: `${cronjob.job}-${cronjob.jobspace}`,
         cronspec: cronjob.cs,
         command: cronjob.command,
         prev: cronjob.prev,
@@ -77,27 +77,27 @@ async function getcronjobs(appkit, args) {
 
 async function getcronjobruns(appkit, args) {
   try {
-    if (args.f =="borked" || args.f == "fail" || args.f == "pizzled") {
-       args.f="failed"
+    if (args.f === 'borked' || args.f === 'fail' || args.f === 'pizzled') {
+      args.f = 'failed'; // eslint-disable-line no-param-reassign
     }
-    if (args.f =="pass" || args.f == "passed") {
-       args.f="success"
+    if (args.f === 'pass' || args.f === 'passed') {
+      args.f = 'success'; // eslint-disable-line no-param-reassign
     }
-
-    if (!args.n  && !args.f ) {
+    let results;
+    if (!args.n && !args.f) {
       results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs`);
     }
-    if (args.n && !args.f ) {
+    if (args.n && !args.f) {
       results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?runs=${args.n}`);
     }
     if (!args.n && args.f) {
       results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?filter=${args.f}`);
     }
-    if (args.n && args.f ){
+    if (args.n && args.f) {
       results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?runs=${args.n}&filter=${args.f}`);
     }
     if (!results || results.length < 1) {
-      appkit.terminal.error(appkit.terminal.markdown(`No cronjob runs found`));
+      appkit.terminal.error(appkit.terminal.markdown('No cronjob runs found'));
       return;
     }
     appkit.terminal.table(results.map((cronjobrun) => {
@@ -105,7 +105,7 @@ async function getcronjobruns(appkit, args) {
         start: cronjobrun.starttime,
         end: cronjobrun.endtime,
         result: cronjobrun.overallstatus,
-        links: cronjobrun.overallstatus == "failed" ? `Logs: ${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${cronjobrun.runid}\nArtifacts: ${DIAGNOSTICS_API_URL}/v1/artifacts/${cronjobrun.runid}/` : "",
+        links: cronjobrun.overallstatus === 'failed' ? `Logs: ${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${cronjobrun.runid}\nArtifacts: ${DIAGNOSTICS_API_URL}/v1/artifacts/${cronjobrun.runid}/` : '',
       };
       return entry;
     }));
@@ -881,6 +881,34 @@ async function artifacts(appkit, args) {
   }
 }
 
+function formatRun(appkit, run) {
+  return {
+    status: appkit.terminal.markdown(`${run.overallstatus === 'starting' ? '~~●~~' : '^^●^^'} ${run.overallstatus}`),
+    id: run.runid,
+    app: `${run.app}-${run.space}`,
+    test: `${run.job}-${run.jobspace}`,
+    image: run.image,
+    started: new Date(run.run_on || run.starttime).toLocaleTimeString(),
+    timeout: run.timeout || 'cron',
+  };
+}
+
+async function currentRuns(appkit) {
+  try {
+    const data = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/status/runs`);
+    const results = []
+      .concat(data.current_runs ? data.current_runs.map(run => formatRun(appkit, run)) : [])
+      .concat(data.current_cron_runs ? data.current_cron_runs.map(run => formatRun(appkit, run)) : []);
+    if (results.length === 0) {
+      console.log(appkit.terminal.markdown('**No tests are currently running...**'));
+    } else {
+      appkit.terminal.table(results);
+    }
+  } catch (err) {
+    appkit.terminal.error(err);
+  }
+}
+
 function update() {}
 
 function init(appkit) {
@@ -961,12 +989,12 @@ function init(appkit) {
       demand: false,
     },
     filter: {
-       alias: 'f',
-       string: true,
-       descriptioon: 'filter',
-       choices: ['failed','success',"pass","borked","fail","passed","pizzled"],
-       demand: false,
-     }
+      alias: 'f',
+      string: true,
+      descriptioon: 'filter',
+      choices: ['failed', 'success', 'pass', 'borked', 'fail', 'passed', 'pizzled'],
+      demand: false,
+    },
   };
 
   appkit.args
@@ -997,8 +1025,12 @@ function init(appkit) {
     appkit.args.command('taas:tail ID', 'BETA: Tail Logs', {}, taillogs.bind(null, appkit));
     appkit.args.command('taas:cron:jobs', 'BETA: Get cronjobs', {}, getcronjobs.bind(null, appkit));
     appkit.args.command('taas:cron:destroy ID', 'BETA: Destroy cronjob', {}, destroycronjob.bind(null, appkit));
-    appkit.args.command('taas:cron:create ID' , 'BETA: Create cronjob', cronOpts, createcronjob.bind(null, appkit));
+    appkit.args.command('taas:cron:create ID', 'BETA: Create cronjob', cronOpts, createcronjob.bind(null, appkit));
     appkit.args.command('taas:cron:runs ID', 'BETA: Get cronjob runs', cronRunsOpts, getcronjobruns.bind(null, appkit));
+
+    appkit.args
+      .command('taas:running', 'BETA: List currently running tests', {}, currentRuns.bind(null, appkit))
+      .command('taas:runs:current', '', {}, currentRuns.bind(null, appkit)); // alias
   }
 }
 
