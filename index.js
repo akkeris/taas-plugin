@@ -25,30 +25,118 @@ function parseError(error) {
   }
 }
 
+async function createcronjob(appkit, args) {
+  try {
+    const diag = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, plainType);
+    const cron = {
+      job: diag.job,
+      jobspace: diag.jobspace,
+      cs: args.s,
+      command: args.c,
+    };
+    const resp = await appkit.api.post(JSON.stringify(cron),`${DIAGNOSTICS_API_URL}/v1/cronjob`);
+    appkit.terminal.vtable(resp);
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
 
-let stream_restarts = 0;
-async function taillogs(appkit, args) {
-  id = args.ID;
-  if (stream_restarts == 0) {
+async function destroycronjob(appkit, args) {
+  try {
+    const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}`);
+    appkit.terminal.vtable(resp);
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+
+async function getcronjobs(appkit, args) {
+  try {
+    const results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjobs`);
+    if (!results || results.length < 1) {
+      appkit.terminal.error(appkit.terminal.markdown(`No cronjobs found`));
+      return;
+    }
+    appkit.terminal.table(results.map((cronjob) => {
+      const entry = {
+        id: cronjob.id,
+        job: cronjob.job+"-"+cronjob.jobspace,
+        cronspec: cronjob.cs,
+        command: cronjob.command,
+        prev: cronjob.prev,
+        next: cronjob.next,
+      };
+      return entry;
+    }));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+
+async function getcronjobruns(appkit, args) {
+  try {
+    if (args.f =="borked" || args.f == "fail" || args.f == "pizzled") {
+       args.f="failed"
+    }
+    if (args.f =="pass" || args.f == "passed") {
+       args.f="success"
+    }
+
+    if (!args.n  && !args.f ) {
+      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs`);
+    }
+    if (args.n && !args.f ) {
+      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?runs=${args.n}`);
+    }
+    if (!args.n && args.f) {
+      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?filter=${args.f}`);
+    }
+    if (args.n && args.f ){
+      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?runs=${args.n}&filter=${args.f}`);
+    }
+    if (!results || results.length < 1) {
+      appkit.terminal.error(appkit.terminal.markdown(`No cronjob runs found`));
+      return;
+    }
+    appkit.terminal.table(results.map((cronjobrun) => {
+      const entry = {
+        start: cronjobrun.starttime,
+        end: cronjobrun.endtime,
+        result: cronjobrun.overallstatus,
+        links: cronjobrun.overallstatus == "failed" ? `Logs: ${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${cronjobrun.runid}\nArtifacts: ${DIAGNOSTICS_API_URL}/v1/artifacts/${cronjobrun.runid}/` : "",
+      };
+      return entry;
+    }));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+let streamRestarts = 0;
+async function taillogs(appkit, args) { // eslint-disable-line
+  const id = args.ID;
+  if (streamRestarts === 0) {
     console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
   }
   try {
-    if (stream_restarts > 20) {
+    if (streamRestarts > 20) {
       return process.exit(1);
     }
     const req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/taillogs`, (res) => {
       res.pipe(process.stdout);
       res.on('end', () => {
-        stream_restarts++;
-        args.ID = id;
+        streamRestarts++; // eslint-disable-line
+        args.ID = id; // eslint-disable-line
         console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
         taillogs(appkit, args);
       });
     });
     req.on('error', (e) => {
       if (e.code === 'ECONNRESET') {
-        stream_restarts++;
-        args.ID = id;
+        streamRestarts++; // eslint-disable-line
+        args.ID = id; // eslint-disable-line
         console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
         taillogs(appkit, args);
       }
@@ -437,6 +525,13 @@ async function newRegister(appkit, args) {
       source: (answers, input) => searchApps(input),
     },
     {
+      name: 'testPreviews',
+      type: 'list',
+      message: 'Do you want to test preview apps?',
+      choices: ['No', 'Yes'],
+      filter: input => (input === 'Yes'),
+    },
+    {
       name: 'job',
       type: 'input',
       message: 'Test Name:',
@@ -559,6 +654,7 @@ async function newRegister(appkit, args) {
       timeout: answers.timeout,
       startdelay: answers.startDelay,
       slackchannel: answers.slackChannel,
+      testpreviews: answers.testPreviews,
       env: answers.envVars
         .replace(/"/g, '')
         .split(' ')
@@ -636,6 +732,8 @@ async function updateJob(appkit, args) {
         value: pair.split('=')[1],
       }));
       resp[property] = env;
+    } else if (property === 'testpreviews') {
+      resp[property] = value === 'true' || value === 't';
     } else {
       resp[property] = value;
     }
@@ -650,11 +748,15 @@ async function updateJob(appkit, args) {
 async function job(appkit, args) {
   try {
     const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    if (jobItem.ispreview) {
+      console.log(appkit.terminal.markdown('###===### !!Preview App Test!! ###===###'));
+    }
     console.log(appkit.terminal.markdown('^^ properties: ^^'));
     appkit.terminal.vtable({
       id: jobItem.id,
       test: `${jobItem.job}-${jobItem.jobspace}`,
       app: `${jobItem.app}-${jobItem.space}`,
+      testpreviews: jobItem.testpreviews,
       action: jobItem.action,
       result: jobItem.result,
       image: jobItem.image,
@@ -756,6 +858,7 @@ async function list(appkit) {
       app: `${test.app}-${test.space}`,
       action: test.action,
       result: test.result,
+      preview: test.ispreview ? 'true' : 'false',
     })));
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -786,7 +889,7 @@ function init(appkit) {
       alias: 'p',
       string: true,
       description: 'property name (timeout, transitionfrom, env, etc).',
-      choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay', 'slackchannel', 'command'],
+      choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay', 'slackchannel', 'command', 'testpreviews'],
       demand: true,
     },
     value: {
@@ -835,6 +938,36 @@ function init(appkit) {
       demand: false,
     },
   };
+  const cronOpts = {
+    cronspec: {
+      alias: 's',
+      string: true,
+      description: 'cronjob spec',
+      demand: true,
+    },
+    command: {
+      alias: 'c',
+      string: true,
+      description: 'cronjob alternate command to container',
+      demand: false,
+    },
+  };
+
+  const cronRunsOpts = {
+    number: {
+      alias: 'n',
+      string: true,
+      description: 'number of runs',
+      demand: false,
+    },
+    filter: {
+       alias: 'f',
+       string: true,
+       descriptioon: 'filter',
+       choices: ['failed','success',"pass","borked","fail","passed","pizzled"],
+       demand: false,
+     }
+  };
 
   appkit.args
     .command('taas:tests', 'List tests', {}, list.bind(null, appkit))
@@ -857,12 +990,15 @@ function init(appkit) {
     .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
     .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit));
 
-
   if (process.env.TAAS_BETA === 'true') {
     appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
     appkit.args.command('taas:config:multiunset KEY', 'BETA: unset an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiUnSet.bind(null, appkit));
     appkit.args.command('taas:tests:audits ID', 'BETA: Get audits for a test', {}, audits.bind(null, appkit));
     appkit.args.command('taas:tail ID', 'BETA: Tail Logs', {}, taillogs.bind(null, appkit));
+    appkit.args.command('taas:cron:jobs', 'BETA: Get cronjobs', {}, getcronjobs.bind(null, appkit));
+    appkit.args.command('taas:cron:destroy ID', 'BETA: Destroy cronjob', {}, destroycronjob.bind(null, appkit));
+    appkit.args.command('taas:cron:create ID' , 'BETA: Create cronjob', cronOpts, createcronjob.bind(null, appkit));
+    appkit.args.command('taas:cron:runs ID', 'BETA: Get cronjob runs', cronRunsOpts, getcronjobruns.bind(null, appkit));
   }
 }
 
