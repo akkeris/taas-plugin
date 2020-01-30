@@ -1,6 +1,6 @@
 {
   "name": "taas-plugin",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Testing as a Service (TaaS) plugin for Akkeris-CLI",
   "main": "index.js",
   "scripts": {

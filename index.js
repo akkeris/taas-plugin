@@ -1016,7 +1016,9 @@ function init(appkit) {
     .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
     .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
     .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
-    .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit));
+    .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
+    .command('taas:running', 'List currently running tests', {}, currentRuns.bind(null, appkit))
+    .command('taas:runs:current', '', {}, currentRuns.bind(null, appkit)); // alias
 
   if (process.env.TAAS_BETA === 'true') {
     appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
@@ -1027,10 +1029,6 @@ function init(appkit) {
     appkit.args.command('taas:cron:destroy ID', 'BETA: Destroy cronjob', {}, destroycronjob.bind(null, appkit));
     appkit.args.command('taas:cron:create ID', 'BETA: Create cronjob', cronOpts, createcronjob.bind(null, appkit));
     appkit.args.command('taas:cron:runs ID', 'BETA: Get cronjob runs', cronRunsOpts, getcronjobruns.bind(null, appkit));
-
-    appkit.args
-      .command('taas:running', 'BETA: List currently running tests', {}, currentRuns.bind(null, appkit))
-      .command('taas:runs:current', '', {}, currentRuns.bind(null, appkit)); // alias
   }
 }
 
