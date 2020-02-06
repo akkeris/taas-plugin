@@ -1026,7 +1026,7 @@ function init(appkit) {
     appkit.args.command('taas:tests:audits ID', 'BETA: Get audits for a test', {}, audits.bind(null, appkit));
     appkit.args.command('taas:tail ID', 'BETA: Tail Logs', {}, taillogs.bind(null, appkit));
     appkit.args.command('taas:cron:jobs', 'BETA: Get cronjobs', {}, getcronjobs.bind(null, appkit));
-    appkit.args.command('taas:cron:destroy ID', 'BETA: Destroy cronjob', {}, destroycronjob.bind(null, appkit));
+    appkit.args.command('taas:cron:destroy ID', 'BETA: Destroy cronjob give cron job ID', {}, destroycronjob.bind(null, appkit));
     appkit.args.command('taas:cron:create ID', 'BETA: Create cronjob', cronOpts, createcronjob.bind(null, appkit));
     appkit.args.command('taas:cron:runs ID', 'BETA: Get cronjob runs', cronRunsOpts, getcronjobruns.bind(null, appkit));
   }
