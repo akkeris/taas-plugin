@@ -970,7 +970,7 @@ function init(appkit) {
     cronspec: {
       alias: 's',
       string: true,
-      description: 'cronjob spec',
+      description: 'cronjob schedule',
       demand: true,
     },
     command: {
