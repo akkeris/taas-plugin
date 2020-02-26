@@ -105,7 +105,7 @@ async function getcronjobruns(appkit, args) {
         start: cronjobrun.starttime,
         end: cronjobrun.endtime,
         result: cronjobrun.overallstatus,
-        links: cronjobrun.overallstatus === 'failed' ? `Logs: ${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${cronjobrun.runid}\nArtifacts: ${DIAGNOSTICS_API_URL}/v1/artifacts/${cronjobrun.runid}/` : '',
+        links: (cronjobrun.overallstatus === 'timedout'||cronjobrun.overallstatus==='failed') ? `Logs: ${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${cronjobrun.runid}\nArtifacts: ${DIAGNOSTICS_API_URL}/v1/artifacts/${cronjobrun.runid}/` : '',
       };
       return entry;
     }));
