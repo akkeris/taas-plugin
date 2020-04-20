@@ -478,6 +478,15 @@ async function newRegister(appkit, args) {
   }
 
   // Validator Functions
+  const isValidJobName = input => {
+    if (input.length === 0) {
+      return 'Required Field';
+    } if (input.length > 26) {
+      return 'Maximum 26 characters';
+    }
+    return true;
+  };
+     
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
 
   const isInteger = input => (!Number.isInteger(input) ? 'Must be an Integer' : true);
@@ -535,7 +544,7 @@ async function newRegister(appkit, args) {
       name: 'job',
       type: 'input',
       message: 'Test Name:',
-      validate: isRequired,
+      validate: isValidJobName,
     },
     {
       name: 'jobSpace',
