@@ -105,7 +105,7 @@ async function getcronjobruns(appkit, args) {
         start: cronjobrun.starttime,
         end: cronjobrun.endtime,
         result: cronjobrun.overallstatus,
-        links: (cronjobrun.overallstatus === 'timedout'||cronjobrun.overallstatus==='failed') ? `Logs: ${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${cronjobrun.runid}\nArtifacts: ${DIAGNOSTICS_API_URL}/v1/artifacts/${cronjobrun.runid}/` : '',
+        links: (cronjobrun.overallstatus === 'timedout' || cronjobrun.overallstatus === 'failed') ? `Logs: ${DIAGNOSTICS_API_URL}/v1/diagnostic/logs/${cronjobrun.runid}\nArtifacts: ${DIAGNOSTICS_API_URL}/v1/artifacts/${cronjobrun.runid}/` : '',
       };
       return entry;
     }));
@@ -379,7 +379,7 @@ async function trigger(appkit, args) {
       action,
       app: { id, name: app },
       space: { name: space },
-      release: { result, id: releases.pop().id },
+      release: { result, id: releases.length > 0 ? releases.pop().id : '' },
       build: { id: builds.length > 0 ? builds.pop().id : '' },
     };
     await appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/releasehook`);
