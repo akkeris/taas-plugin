@@ -256,15 +256,13 @@ async function multiSet(appkit, args) {
     return;
   }
 
-  if (args.KVPAIR.match(/\s/g)) {
-    appkit.terminal.error('Whitespace not allowed in key/value pair.');
+  const configvar = {};
+  [configvar.varname, configvar.varvalue] = args.KVPAIR.split('=');
+
+  if (configvar.varname.match(/\s/g)) {
+    appkit.terminal.error('Whitespace not allowed in key name.');
     return;
   }
-
-  const configvar = {
-    varname: args.KVPAIR.split('=')[0],
-    varvalue: args.KVPAIR.split('=')[1],
-  };
 
   try {
     const diagnostics = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
@@ -315,15 +313,13 @@ async function setVar(appkit, args) {
     return;
   }
 
-  if (args.KVPAIR.match(/\s/g)) {
-    appkit.terminal.error('Whitespace not allowed in key/value pair.');
+  const configvar = {};
+  [configvar.varname, configvar.varvalue] = args.KVPAIR.split('=');
+
+  if (configvar.varname.match(/\s/g)) {
+    appkit.terminal.error('Whitespace not allowed in key name.');
     return;
   }
-
-  const configvar = {
-    varname: args.KVPAIR.split('=')[0],
-    varvalue: args.KVPAIR.split('=')[1],
-  };
 
   try {
     const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config`);
