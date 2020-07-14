@@ -715,10 +715,31 @@ async function listRuns(appkit, args) {
 }
 
 async function updateJob(appkit, args) {
-  const property = args.p || args.property;
-  const value = args.v || args.value;
+  let property = args.p || args.property;
+  let value = args.v || args.value;
   try {
     const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+
+    if (property === 'command' && value === 'Default command in image') {
+      console.log('\nDo you want to use the default command in the specified Docker image?\n');
+      const { unset } = await inquirer.prompt({
+        type: 'list',
+        name: 'unset',
+        message: 'Choose an option:',
+        choices: [
+          { key: 'yes', name: 'Use the default command', value: true },
+          { key: 'no', name: '(DANGER) Use the string "Default command in image" as the Docker run command', value: false },
+        ],
+        default: true,
+      });
+
+      if (unset) {
+        property = 'command';
+        value = '';
+      } else {
+        console.log('\nUsing the string "Default command in image" as the Docker run command...\n');
+      }
+    }
 
     if (property === 'timeout' || property === 'startdelay') {
       resp[property] = parseInt(value, 10);
@@ -745,26 +766,25 @@ async function job(appkit, args) {
   try {
     const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
     if (jobItem.ispreview) {
-      console.log(appkit.terminal.markdown('###===### !!Preview App Test!! ###===###'));
+      console.log(appkit.terminal.markdown('\n###===### !!Preview App Test!! ###===###'));
     }
-    console.log(appkit.terminal.markdown('^^ properties: ^^'));
+    console.log(appkit.terminal.markdown(`\n${jobItem.job}-${jobItem.jobspace} ###(${jobItem.id})###`));
+    console.log(appkit.terminal.markdown('^^Properties: ^^'));
     appkit.terminal.vtable({
-      id: jobItem.id,
-      test: `${jobItem.job}-${jobItem.jobspace}`,
       app: `${jobItem.app}-${jobItem.space}`,
-      testpreviews: jobItem.testpreviews,
+      image: jobItem.image,
       action: jobItem.action,
       result: jobItem.result,
-      image: jobItem.image,
       pipelinename: jobItem.pipelinename,
       transitionfrom: jobItem.transitionfrom,
       transitionto: jobItem.transitionto,
       timeout: jobItem.timeout,
       startdelay: jobItem.startdelay,
       slackchannel: jobItem.slackchannel,
-      command: jobItem.command ? jobItem.command : 'Default command in image',
+      testpreviews: jobItem.testpreviews,
+      command: jobItem.command ? `"${jobItem.command}"` : appkit.terminal.markdown('###Default command in image###'),
     });
-    console.log(appkit.terminal.markdown('^^ env: ^^'));
+    console.log(appkit.terminal.markdown('^^Environment Variables: ^^'));
     if (jobItem.env) {
       appkit.terminal.table(jobItem.env);
     } else {
