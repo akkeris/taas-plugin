@@ -413,7 +413,7 @@ async function runInfo(appkit, args) {
 async function addHooks(appkit, args) {
   try {
     await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/hooks`, jsonType);
-    console.log(appkit.terminal.markdown('^^ done ^^'));
+    if (!args.fromNewRegister) console.log(appkit.terminal.markdown('^^ done ^^'));
     return; // If using updated TaaS backend then we're finished
   } catch (err) {
     if (err.code !== 404) {
@@ -461,7 +461,7 @@ async function addHooks(appkit, args) {
       await appkit.api.post(JSON.stringify(hook), `/apps/${app}/hooks`);
       console.log(appkit.terminal.markdown('^^ build hook added ^^'));
     }
-    console.log(appkit.terminal.markdown('^^ done ^^'));
+    if (!args.fromNewRegister) console.log(appkit.terminal.markdown('^^ done ^^'));
   } catch (err) {
     appkit.terminal.error(err);
   }
@@ -471,6 +471,7 @@ async function newRegister(appkit, args) {
   const appNames = (await appkit.api.get('/apps')).map(i => i.name);
   if (appNames.length === 0) {
     appkit.terminal.error(appkit.terminal.markdown('###===### No apps were found. At least one app must exist in order to use this command.'));
+    return;
   }
 
   // Validator Functions
@@ -511,6 +512,8 @@ async function newRegister(appkit, args) {
   };
 
   const searchApps = async input => fuzzy.filter((input || ''), appNames).map(e => e.original);
+
+  let overrideButWantedDefaultCommand = false;
 
   const questions = [
     {
@@ -563,7 +566,7 @@ async function newRegister(appkit, args) {
       when: answers => !answers.useAppImage,
     },
     {
-      name: 'override',
+      name: 'overrideCommand',
       type: 'list',
       message: 'Override command in docker image?',
       choices: ['No', 'Yes'],
@@ -573,8 +576,15 @@ async function newRegister(appkit, args) {
       name: 'command',
       type: 'input',
       message: 'Command:',
-      validate: isRequired,
-      when: answers => !!answers.override,
+      when: answers => !!answers.overrideCommand,
+      validate: (input) => {
+        if (input.length < 1) return 'Required Field';
+        if (input === 'Default command in image') {
+          overrideButWantedDefaultCommand = true;
+          return true;
+        }
+        return true;
+      },
     },
     {
       name: 'autoPromote',
@@ -635,6 +645,11 @@ async function newRegister(appkit, args) {
     console.log(appkit.terminal.markdown('###(Press [CTRL+C] to cancel at any time)###\n'));
 
     const answers = await inquirer.prompt(questions);
+
+    if (overrideButWantedDefaultCommand) {
+      answers.overrideCommand = false;
+    }
+
     const diagnostic = {
       app: answers.app.split('-')[0],
       space: answers.app.split('-').slice(1).join('-'),
@@ -643,7 +658,7 @@ async function newRegister(appkit, args) {
       job: answers.job,
       jobspace: answers.jobSpace,
       image: answers.image,
-      command: answers.override ? answers.command : undefined,
+      command: answers.overrideCommand ? answers.command : undefined,
       pipelinename: answers.autoPromote ? answers.pipelineName : 'manual',
       transitionfrom: answers.autoPromote ? answers.transitionFrom : 'manual',
       transitionto: answers.autoPromote ? answers.transitionTo : 'manual',
@@ -661,8 +676,13 @@ async function newRegister(appkit, args) {
         .filter(e => e.name && e.value),
     };
     const resp = await appkit.api.post(JSON.stringify(diagnostic), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
-    appkit.terminal.vtable(resp);
     args.ID = `${answers.job}-${answers.jobSpace}`; // eslint-disable-line
+    args.fromNewRegister = true; // eslint-disable-line
+    if (resp.status === 'created') {
+      console.log(appkit.terminal.markdown(`\n^^Successfully created test "${args.ID}"!^^`));
+    } else {
+      appkit.terminal.vtable(resp);
+    }
     addHooks(appkit, args); // This will be removed soon
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -715,10 +735,31 @@ async function listRuns(appkit, args) {
 }
 
 async function updateJob(appkit, args) {
-  const property = args.p || args.property;
-  const value = args.v || args.value;
+  let property = args.p || args.property;
+  let value = args.v || args.value;
   try {
     const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+
+    if (property === 'command' && value === 'Default command in image') {
+      console.log('\nDo you want to use the default command in the specified Docker image?\n');
+      const { unset } = await inquirer.prompt({
+        type: 'list',
+        name: 'unset',
+        message: 'Choose an option:',
+        choices: [
+          { key: 'yes', name: 'Use the default command', value: true },
+          { key: 'no', name: '(DANGER) Use the string "Default command in image" as the Docker run command', value: false },
+        ],
+        default: true,
+      });
+
+      if (unset) {
+        property = 'command';
+        value = '';
+      } else {
+        console.log('\nUsing the string "Default command in image" as the Docker run command...\n');
+      }
+    }
 
     if (property === 'timeout' || property === 'startdelay') {
       resp[property] = parseInt(value, 10);
@@ -745,26 +786,25 @@ async function job(appkit, args) {
   try {
     const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
     if (jobItem.ispreview) {
-      console.log(appkit.terminal.markdown('###===### !!Preview App Test!! ###===###'));
+      console.log(appkit.terminal.markdown('\n###===### !!Preview App Test!! ###===###'));
     }
-    console.log(appkit.terminal.markdown('^^ properties: ^^'));
+    console.log(appkit.terminal.markdown(`\n${jobItem.job}-${jobItem.jobspace} ###(${jobItem.id})###`));
+    console.log(appkit.terminal.markdown('^^Properties: ^^'));
     appkit.terminal.vtable({
-      id: jobItem.id,
-      test: `${jobItem.job}-${jobItem.jobspace}`,
       app: `${jobItem.app}-${jobItem.space}`,
-      testpreviews: jobItem.testpreviews,
+      image: jobItem.image,
       action: jobItem.action,
       result: jobItem.result,
-      image: jobItem.image,
       pipelinename: jobItem.pipelinename,
       transitionfrom: jobItem.transitionfrom,
       transitionto: jobItem.transitionto,
       timeout: jobItem.timeout,
       startdelay: jobItem.startdelay,
       slackchannel: jobItem.slackchannel,
-      command: jobItem.command ? jobItem.command : 'Default command in image',
+      testpreviews: jobItem.testpreviews,
+      command: jobItem.command ? `"${jobItem.command}"` : appkit.terminal.markdown('###Default command in image###'),
     });
-    console.log(appkit.terminal.markdown('^^ env: ^^'));
+    console.log(appkit.terminal.markdown('^^Environment Variables: ^^'));
     if (jobItem.env) {
       appkit.terminal.table(jobItem.env);
     } else {
