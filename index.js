@@ -468,13 +468,15 @@ async function addHooks(appkit, args) {
 }
 
 async function newRegister(appkit, args) {
-  const appNames = (await appkit.api.get('/apps')).map(i => i.name);
-  if (appNames.length === 0) {
-    appkit.terminal.error(appkit.terminal.markdown('###===### No apps were found. At least one app must exist in order to use this command.'));
-    return;
-  }
+  let loading = appkit.terminal.loading();
+  loading.start();
 
-  // Validator Functions
+  let appNames;
+  let pipelineStages;
+  let pipelines;
+  let overrideButWantedDefaultCommand = false;
+
+  // Validator functions for user prompts
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
 
   const isInteger = input => (!Number.isInteger(input) ? 'Must be an Integer' : true);
@@ -511,35 +513,82 @@ async function newRegister(appkit, args) {
     return true;
   };
 
+  // Search functions for autocomplete prompts
+  const findPromotable = arr => arr.filter(a => arr.filter(b => b.stage === pipelineStages[a.stage]).length > 0);
+
   const searchApps = async input => fuzzy.filter((input || ''), appNames).map(e => e.original);
 
-  let overrideButWantedDefaultCommand = false;
+  const searchPipelines = async input => fuzzy.filter((input || ''), pipelines.map(p => p.name)).map(e => e.original);
 
+  const searchPromotableCouplings = async (pipeline, input) => {
+    const { couplings } = pipelines.find(p => p.name === pipeline);
+    const promotable = findPromotable(couplings).map(a => `${a.stage}: ${a.app.name}`);
+    return fuzzy.filter((input || ''), promotable).map(e => e.original);
+  };
+
+  const searchDestinationCouplings = async (pipeline, formattedCoupling, input) => {
+    const { groups: { stage } } = formattedCoupling.match(/(?<stage>.*): (?<app>.*)/);
+    const { couplings } = pipelines.find(p => p.name === pipeline);
+    const destinations = couplings.filter(c => c.stage === pipelineStages[stage]).map(a => `${a.stage}: ${a.app.name}`);
+    return fuzzy.filter((input || ''), destinations).map(e => e.original);
+  };
+
+  // Retrieve necessary data from Akkeris
+  try {
+    appNames = (await appkit.api.get('/apps')).map(i => i.name);
+    if (appNames.length === 0) {
+      appkit.terminal.error(appkit.terminal.markdown('###===### No apps were found. At least one app must exist in order to use this command.'));
+      return;
+    }
+
+    pipelineStages = (await appkit.api.get('/pipeline-stages'));
+    const pipelineCouplings = (await appkit.api.get('/pipeline-couplings'));
+    const pipelineNames = [...new Set(pipelineCouplings.map(c => c.pipeline.name))];
+
+    // Group couplings by their pipeline
+    pipelines = pipelineNames.reduce((acc, pipeline) => {
+      const couplings = pipelineCouplings.filter(coupling => coupling.pipeline.name === pipeline);
+
+      // Make sure there is at least one coupling that can be promoted
+      if (findPromotable(couplings).length < 1) {
+        return acc;
+      }
+
+      return acc.concat([{
+        name: pipeline,
+        couplings,
+      }]);
+    }, []);
+    pipelines.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+
+  // List of questions to prompt the user
   const questions = [
     {
       name: 'app',
       type: 'autocomplete',
-      message: 'Select an App',
-      suffix: ':',
+      message: 'Select an App:',
       source: (answers, input) => searchApps(input),
     },
     {
       name: 'testPreviews',
       type: 'list',
-      message: 'Do you want to test preview apps?',
+      message: answers => `Test preview apps for ${answers.app}?`,
       choices: ['No', 'Yes'],
       filter: input => (input === 'Yes'),
     },
     {
       name: 'job',
       type: 'input',
-      message: 'Test Name:',
+      message: 'Enter a name for your test:',
       validate: isRequired,
     },
     {
       name: 'jobSpace',
       type: 'input',
-      message: 'Test Space:',
+      message: 'Enter a space for your test:',
       validate: isRequired,
     },
     {
@@ -552,8 +601,7 @@ async function newRegister(appkit, args) {
     {
       name: 'image',
       type: 'autocomplete',
-      message: 'Select the test suite app',
-      suffix: ':',
+      message: 'Select the test suite app:',
       source: (answers, input) => searchApps(input),
       when: answers => !!answers.useAppImage,
       filter: input => `akkeris://${input}`,
@@ -561,7 +609,7 @@ async function newRegister(appkit, args) {
     {
       name: 'image',
       type: 'input',
-      message: 'Provide image location:',
+      message: 'Provide Docker image:',
       validate: isRequired,
       when: answers => !answers.useAppImage,
     },
@@ -592,26 +640,29 @@ async function newRegister(appkit, args) {
       message: 'Automatically promote?',
       choices: ['No', 'Yes'],
       filter: input => (input === 'Yes'),
+      validate: input => (input === 'Yes' && pipelines.length < 1
+        ? 'At least one pipeline must exist to use auto-promotion' : true
+      ),
     },
     {
       name: 'pipelineName',
-      type: 'input',
-      message: 'Pipeline Name:',
-      validate: isRequired,
+      type: 'autocomplete',
+      message: 'Select a pipeline:',
+      source: (answers, input) => searchPipelines(input),
       when: answers => !!answers.autoPromote,
     },
     {
       name: 'transitionFrom',
-      type: 'input',
-      message: 'Transition From:',
-      validate: isRequired,
+      type: 'autocomplete',
+      message: 'Select a stage and app to promote from:',
+      source: (answers, input) => searchPromotableCouplings(answers.pipelineName, input),
       when: answers => !!answers.autoPromote,
     },
     {
       name: 'transitionTo',
-      type: 'input',
-      message: 'Transition To:',
-      validate: isRequired,
+      type: 'autocomplete',
+      message: 'Select a stage and app to promote to:',
+      source: (answers, input) => searchDestinationCouplings(answers.pipelineName, answers.transitionFrom, input),
       when: answers => !!answers.autoPromote,
     },
     {
@@ -641,6 +692,7 @@ async function newRegister(appkit, args) {
   ];
 
   try {
+    loading.end();
     console.log(appkit.terminal.markdown('\n###===### New Test Registration ###===###'));
     console.log(appkit.terminal.markdown('###(Press [CTRL+C] to cancel at any time)###\n'));
 
@@ -660,8 +712,8 @@ async function newRegister(appkit, args) {
       image: answers.image,
       command: answers.overrideCommand ? answers.command : undefined,
       pipelinename: answers.autoPromote ? answers.pipelineName : 'manual',
-      transitionfrom: answers.autoPromote ? answers.transitionFrom : 'manual',
-      transitionto: answers.autoPromote ? answers.transitionTo : 'manual',
+      transitionfrom: answers.autoPromote ? answers.transitionFrom.replace(' ', '') : 'manual',
+      transitionto: answers.autoPromote ? answers.transitionTo.replace(' ', '') : 'manual',
       timeout: answers.timeout,
       startdelay: answers.startDelay,
       slackchannel: answers.slackChannel,
@@ -675,9 +727,14 @@ async function newRegister(appkit, args) {
         }))
         .filter(e => e.name && e.value),
     };
+
+    loading = appkit.terminal.loading('Submitting test');
+    loading.start();
+
     const resp = await appkit.api.post(JSON.stringify(diagnostic), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
     args.ID = `${answers.job}-${answers.jobSpace}`; // eslint-disable-line
     args.fromNewRegister = true; // eslint-disable-line
+    loading.end();
     if (resp.status === 'created') {
       console.log(appkit.terminal.markdown(`\n^^Successfully created test "${args.ID}"!^^`));
     } else {
@@ -685,6 +742,7 @@ async function newRegister(appkit, args) {
     }
     addHooks(appkit, args); // This will be removed soon
   } catch (err) {
+    loading.end();
     appkit.terminal.error(parseError(err));
   }
 }
@@ -840,11 +898,27 @@ async function listConfig(appkit, args) {
 
 async function deleteTest(appkit, args) {
   try {
-    await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`);
-    console.log(appkit.terminal.markdown('^^ deleted ^^'));
+    await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
   } catch (err) {
     appkit.terminal.error(parseError(err));
+    return;
   }
+  const del = async (input) => {
+    if (input.toLowerCase() === 'y' || input.toLowerCase() === 'yes') {
+      const task = appkit.terminal.task(`Destroying test ${args.ID}`);
+      task.start();
+      try {
+        await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`);
+        task.end('ok');
+      } catch (err) {
+        task.end('error');
+        appkit.terminal.error(parseError(err));
+      }
+    } else {
+      appkit.terminal.soft_error('Test deletion aborted');
+    }
+  };
+  appkit.terminal.confirm(`\n~~▸~~  WARNING: This will delete the test **${args.ID}**!\n~~▸~~  Please type "yes" to confirm\n`, del);
 }
 
 function colorize(text, colorname) { // eslint-disable-line
