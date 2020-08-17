@@ -684,6 +684,11 @@ async function newRegister(appkit, args) {
       validate: hasHash,
     },
     {
+      name: 'webhookURLs',
+      type: 'input',
+      message: 'Webhook URLs (optional, comma-separated):',
+    },
+    {
       name: 'envVars',
       type: 'input',
       message: 'Environment Variables:\n  (e.g. KEY="value" KEY2=value2)\n>',
@@ -718,6 +723,7 @@ async function newRegister(appkit, args) {
       startdelay: answers.startDelay,
       slackchannel: answers.slackChannel,
       testpreviews: answers.testPreviews,
+      webhookurls: answers.webhookURLs,
       env: answers.envVars
         .replace(/"/g, '')
         .split(' ')
@@ -860,6 +866,7 @@ async function job(appkit, args) {
       startdelay: jobItem.startdelay,
       slackchannel: jobItem.slackchannel,
       testpreviews: jobItem.testpreviews,
+      webhookurls: jobItem.webhookurls || appkit.terminal.markdown('###None###'),
       command: jobItem.command ? `"${jobItem.command}"` : appkit.terminal.markdown('###Default command in image###'),
     });
     console.log(appkit.terminal.markdown('^^Environment Variables: ^^'));
@@ -1027,7 +1034,11 @@ function init(appkit) {
       alias: 'p',
       string: true,
       description: 'property name (timeout, transitionfrom, env, etc).',
-      choices: ['image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay', 'slackchannel', 'command', 'testpreviews'],
+      choices: [
+        'image', 'pipelinename', 'transitionfrom', 'transitionto',
+        'timeout', 'startdelay', 'slackchannel', 'command', 'testpreviews',
+        'webhookurls',
+      ],
       demand: true,
     },
     value: {
