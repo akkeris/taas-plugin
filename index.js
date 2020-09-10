@@ -1204,22 +1204,38 @@ function init(appkit) {
     appkit.args
       // Tests
       .command('taas', 'List tests', {}, list.bind(null, appkit))
+      .command('taas:tests', false, {}, list.bind(null, appkit)) // alias
+
       .command('taas:info <id|name>', 'Describe test', strPositional.bind(null, 'id', 'Test ID or name'), job.bind(null, appkit))
+      .command('taas:tests:info <id|name>', false, strPositional.bind(null, 'id', 'Test ID or name'), job.bind(null, appkit)) // alias
+
       .command('taas:register', 'Register new test', {}, newRegister.bind(null, appkit))
+      .command('taas:tests:register', false, {}, newRegister.bind(null, appkit)) // alias
+
       .command('taas:update <id|name> <property> <value>', 'Update test', updateBuilder, updateJob.bind(null, appkit))
+      .command('taas:tests:update <id|name> <property> <value>', false, updateBuilder, updateJob.bind(null, appkit)) // alias
+
       .command('taas:destroy <id|name>', 'Delete test', strPositional.bind(null, 'id', 'Test ID or name'), deleteTest.bind(null, appkit))
+      .command('taas:tests:destroy <id|name>', false, strPositional.bind(null, 'id', 'Test ID or name'), deleteTest.bind(null, appkit)) // alias
+
       .command('taas:trigger <id|name>', 'Trigger a test', strPositional.bind(null, 'id', 'Test ID or name'), trigger.bind(null, appkit))
+      .command('taas:tests:trigger <id|name>', false, strPositional.bind(null, 'id', 'Test ID or name'), trigger.bind(null, appkit)) // alias
+
       // Environment Variables
       .command('taas:config <id|name>', 'List environment variables', configBuilder, listConfig.bind(null, appkit))
       .command('taas:config:set <id|name> <kvpair>', 'Set an environment variable', configSetBuilder, setVar.bind(null, appkit))
       .command('taas:config:unset <id|name> <var>', 'Unset an environment variable', configUnsetBuilder, unsetVar.bind(null, appkit))
+
       // Runs
       .command('taas:runs <id|name>', 'List test runs', strPositional.bind(null, 'id', 'Test ID or name'), listRuns.bind(null, appkit))
       .command('taas:runs:info <id>', 'Get info for a run', strPositional.bind(null, 'id', 'Run ID'), runInfo.bind(null, appkit))
-      .command('taas:runs:output <id|name>', 'Get logs for a run. If ID is a test name, gets latest', strPositional.bind(null, 'id', 'Run ID or test name'), getLogs.bind(null, appkit))
-      .command('taas:logs <id|name>', 'Get logs for a run. If ID is a test name, gets latest', strPositional.bind(null, 'id', 'Run ID or test name'), getLogs.bind(null, appkit)) // shown alias
       .command('taas:runs:rerun <id>', 'Reruns a run', strPositional.bind(null, 'id', 'Run ID'), reRun.bind(null, appkit))
       .command('taas:runs:artifacts <id>', 'Get link to view artifacts for a run', strPositional.bind(null, 'id', 'Run ID'), artifacts.bind(null, appkit))
+
+      .command('taas:runs:output <id|name>', 'Get logs for a run. If ID is a test name, gets latest', strPositional.bind(null, 'id', 'Run ID or test name'), getLogs.bind(null, appkit))
+      .command('taas:logs <id|name>', 'Get logs for a run. If ID is a test name, gets latest', strPositional.bind(null, 'id', 'Run ID or test name'), getLogs.bind(null, appkit)) // shown alias
+      .command('taas:tests:logs <id|name>', false, strPositional.bind(null, 'id', 'Run ID or test name'), getLogs.bind(null, appkit)) // alias
+
       // Misc
       .command('taas:images', 'List images', {}, images.bind(null, appkit))
       .command('taas:hooks:create <id|name>', 'Add testing hooks to a test\'s target app', strPositional.bind(null, 'id', 'Test ID or name'), addHooks.bind(null, appkit))
