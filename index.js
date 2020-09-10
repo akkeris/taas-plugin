@@ -27,12 +27,12 @@ function parseError(error) {
 
 async function createcronjob(appkit, args) {
   try {
-    const diag = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, plainType);
+    const diag = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, plainType);
     const cron = {
       job: diag.job,
       jobspace: diag.jobspace,
-      cs: args.s,
-      command: args.c,
+      cronspec: args.cronspec,
+      command: args.command,
     };
     const resp = await appkit.api.post(JSON.stringify(cron), `${DIAGNOSTICS_API_URL}/v1/cronjob`);
     appkit.terminal.vtable(resp);
@@ -43,7 +43,7 @@ async function createcronjob(appkit, args) {
 
 async function destroycronjob(appkit, args) {
   try {
-    const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}`);
+    const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}`);
     appkit.terminal.vtable(resp);
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -58,14 +58,16 @@ async function getcronjobs(appkit) {
       appkit.terminal.error(appkit.terminal.markdown('No cronjobs found'));
       return;
     }
+
     appkit.terminal.table(results.map((cronjob) => {
       const entry = {
         id: cronjob.id,
         job: `${cronjob.job}-${cronjob.jobspace}`,
-        cronspec: cronjob.cs,
+        cronspec: cronjob.cronspec,
         command: cronjob.command,
-        prev: cronjob.prev,
-        next: cronjob.next,
+        disabled: cronjob.disabled.toString(),
+        prev: cronjob.prev === '0001-01-01T00:00:00Z' ? '--' : cronjob.prev,
+        next: cronjob.next === '0001-01-01T00:00:00Z' ? '--' : cronjob.next,
       };
       return entry;
     }));
@@ -85,20 +87,19 @@ async function getcronjobruns(appkit, args) {
     }
     let results;
     if (!args.n && !args.f) {
-      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs`);
+      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}/runs`);
     }
     if (args.n && !args.f) {
-      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?runs=${args.n}`);
+      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}/runs?runs=${args.n}`);
     }
     if (!args.n && args.f) {
-      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?filter=${args.f}`);
+      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}/runs?filter=${args.f}`);
     }
     if (args.n && args.f) {
-      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.ID}/runs?runs=${args.n}&filter=${args.f}`);
+      results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}/runs?runs=${args.n}&filter=${args.f}`);
     }
     if (!results || results.length < 1) {
       appkit.terminal.error(appkit.terminal.markdown('No cronjob runs found'));
-      return;
     }
     appkit.terminal.table(results.map((cronjobrun) => {
       const entry = {
@@ -114,9 +115,58 @@ async function getcronjobruns(appkit, args) {
   }
 }
 
+async function getCronjob(appkit, args) {
+  try {
+    const cronjob = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}`);
+
+    console.log(appkit.terminal.markdown(`^^ Cronjob Info ^^ ${cronjob.disabled && '!!(disabled)!!'}`));
+    appkit.terminal.vtable({
+      id: cronjob.id,
+      job: `${cronjob.job}-${cronjob.jobspace}`,
+      cronspec: cronjob.cronspec,
+      command: cronjob.command ? `"${cronjob.command}"` : appkit.terminal.markdown('###Default command in image###'),
+      disabled: cronjob.disabled.toString(),
+      prev: cronjob.prev === '0001-01-01T00:00:00Z' ? '--' : cronjob.prev,
+      next: cronjob.next === '0001-01-01T00:00:00Z' ? '--' : cronjob.next,
+    });
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function enableCron(appkit, args) {
+  try {
+    const cronjob = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}`);
+    if (cronjob.disabled) {
+      cronjob.disabled = false;
+      const resp = await appkit.api.patch(JSON.stringify(cronjob), `${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}`);
+      appkit.terminal.vtable(resp);
+    } else {
+      console.log('The specified cronjob is already enabled.');
+    }
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
+async function disableCron(appkit, args) {
+  try {
+    const cronjob = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}`);
+    if (!cronjob.disabled) {
+      cronjob.disabled = true;
+      const resp = await appkit.api.patch(JSON.stringify(cronjob), `${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}`);
+      appkit.terminal.vtable(resp);
+    } else {
+      console.log('The specified cronjob is already disabled.');
+    }
+  } catch (err) {
+    appkit.terminal.error(parseError(err));
+  }
+}
+
 let streamRestarts = 0;
 async function taillogs(appkit, args) { // eslint-disable-line
-  const id = args.ID;
+  const { id } = args;
   if (streamRestarts === 0) {
     console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
   }
@@ -124,11 +174,11 @@ async function taillogs(appkit, args) { // eslint-disable-line
     if (streamRestarts > 20) {
       return process.exit(1);
     }
-    const req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/taillogs`, (res) => {
+    const req = https.request(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}/taillogs`, (res) => {
       res.pipe(process.stdout);
       res.on('end', () => {
         streamRestarts++; // eslint-disable-line
-        args.ID = id; // eslint-disable-line
+        args.id = id; // eslint-disable-line
         console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
         taillogs(appkit, args);
       });
@@ -136,7 +186,7 @@ async function taillogs(appkit, args) { // eslint-disable-line
     req.on('error', (e) => {
       if (e.code === 'ECONNRESET') {
         streamRestarts++; // eslint-disable-line
-        args.ID = id; // eslint-disable-line
+        args.id = id; // eslint-disable-line
         console.log(appkit.terminal.markdown('^^waiting for logs... ^^'));
         taillogs(appkit, args);
       }
@@ -150,9 +200,9 @@ async function taillogs(appkit, args) { // eslint-disable-line
 
 async function audits(appkit, args) {
   try {
-    const results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/audits`);
+    const results = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}/audits`);
     if (!results || results.length < 1) {
-      appkit.terminal.error(appkit.terminal.markdown(`No audits found for ***${args.ID}***`));
+      appkit.terminal.error(appkit.terminal.markdown(`No audits found for ***${args.id}***`));
       return;
     }
     appkit.terminal.table(results.map((audit) => {
@@ -213,7 +263,7 @@ async function multiUnSet(appkit, args) {
       return;
     }
 
-    console.log(`About to unset ${args.KEY} for:`);
+    console.log(`About to unset ${args.key} for:`);
     console.log(matches.join('\n'));
 
     const { confirm } = await inquirer.prompt({
@@ -227,7 +277,7 @@ async function multiUnSet(appkit, args) {
       console.log('Continuing ... ');
 
       matches.forEach(async (currentMatch) => {
-        const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${currentMatch}/config/${args.KEY}`);
+        const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${currentMatch}/config/${args.key}`);
         appkit.terminal.vtable(resp);
       });
     }
@@ -251,13 +301,13 @@ async function multiSet(appkit, args) {
     return;
   }
 
-  if (args.KVPAIR.split('=').length !== 2 || args.KVPAIR.split('=')[0] === '' || args.KVPAIR.split('=')[1] === '') {
+  if (args.kvpair.split('=').length !== 2 || args.kvpair.split('=')[0] === '' || args.kvpair.split('=')[1] === '') {
     appkit.terminal.error('Invalid key/value pair.');
     return;
   }
 
   const configvar = {};
-  [configvar.varname, configvar.varvalue] = args.KVPAIR.split('=');
+  [configvar.varname, configvar.varvalue] = args.kvpair.split('=');
 
   if (configvar.varname.match(/\s/g)) {
     appkit.terminal.error('Whitespace not allowed in key name.');
@@ -308,21 +358,19 @@ function isUUID(str) {
 }
 
 async function setVar(appkit, args) {
-  if (args.KVPAIR.split('=').length !== 2 || args.KVPAIR.split('=')[0] === '' || args.KVPAIR.split('=')[1] === '') {
+  if (args.kvpair.split('=').length !== 2 || args.kvpair.split('=')[0] === '' || args.kvpair.split('=')[1] === '') {
     appkit.terminal.error('Invalid key/value pair.');
-    return;
   }
 
   const configvar = {};
-  [configvar.varname, configvar.varvalue] = args.KVPAIR.split('=');
+  [configvar.varname, configvar.varvalue] = args.kvpair.split('=');
 
   if (configvar.varname.match(/\s/g)) {
     appkit.terminal.error('Whitespace not allowed in key name.');
-    return;
   }
 
   try {
-    const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config`);
+    const resp = await appkit.api.post(JSON.stringify(configvar), `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}/config`);
     appkit.terminal.vtable(resp);
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -331,7 +379,7 @@ async function setVar(appkit, args) {
 
 async function unsetVar(appkit, args) {
   try {
-    const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/config/${args.VAR}`);
+    const resp = await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}/config/${args.var}`);
     appkit.terminal.vtable(resp);
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -344,7 +392,7 @@ async function addSecret(appkit, args) {
     const addonpart = plan.split(':')[0];
     const planpart = plan.split(':')[1];
     const { spec } = await appkit.api.get(`/addon-services/${addonpart}/plans/${planpart}`);
-    const resp = await appkit.api.post(null, `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/bind/${spec}`);
+    const resp = await appkit.api.post(null, `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}/bind/${spec}`);
     appkit.terminal.vtable(resp);
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -357,7 +405,7 @@ async function removeSecret(appkit, args) {
     const addonpart = plan.split(':')[0];
     const planpart = plan.split(':')[1];
     const { spec } = await appkit.api.get(`/addon-services/${addonpart}/plans/${planpart}`);
-    const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/bind/${spec}`, jsonType);
+    const resp = await appkit.http.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}/bind/${spec}`, jsonType);
     appkit.terminal.vtable(resp);
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -368,7 +416,7 @@ async function trigger(appkit, args) {
   try {
     const {
       app, space, id, action, result,
-    } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, plainType);
+    } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, plainType);
     const releases = await appkit.api.get(`/apps/${app}-${space}/releases`);
     const builds = await appkit.api.get(`/apps/${app}-${space}/builds`);
     const hook = {
@@ -387,7 +435,7 @@ async function trigger(appkit, args) {
 
 async function reRun(appkit, args) {
   try {
-    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.id}`, plainType);
     const query = `space=${source.space}&app=${source.app}&action=release&result=succeeded&buildid=${source.buildid}`;
     await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/rerun?${query}`, {});
     console.log(appkit.terminal.markdown('^^ rerun initiated ^^'));
@@ -398,7 +446,7 @@ async function reRun(appkit, args) {
 
 async function runInfo(appkit, args) {
   try {
-    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.id}`, plainType);
     if (typeof source.job === 'undefined' || source.job === '') {
       appkit.terminal.error(appkit.terminal.markdown('!!Invalid run ID!!'));
       return;
@@ -412,7 +460,7 @@ async function runInfo(appkit, args) {
 
 async function addHooks(appkit, args) {
   try {
-    await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}/hooks`, jsonType);
+    await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}/hooks`, jsonType);
     if (!args.fromNewRegister) console.log(appkit.terminal.markdown('^^ done ^^'));
     return; // If using updated TaaS backend then we're finished
   } catch (err) {
@@ -424,7 +472,7 @@ async function addHooks(appkit, args) {
 
   // Response from backend was 404. Using old TaaS backend. Manually create hooks.
   try {
-    const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, jsonType);
     const app = `${jobItem.app}-${jobItem.space}`;
 
     const hooks = await appkit.api.get(`/apps/${app}/hooks`);
@@ -738,11 +786,11 @@ async function newRegister(appkit, args) {
     loading.start();
 
     const resp = await appkit.api.post(JSON.stringify(diagnostic), `${DIAGNOSTICS_API_URL}/v1/diagnostic`);
-    args.ID = `${answers.job}-${answers.jobSpace}`; // eslint-disable-line
+    args.id = `${answers.job}-${answers.jobSpace}`; // eslint-disable-line
     args.fromNewRegister = true; // eslint-disable-line
     loading.end();
     if (resp.status === 'created') {
-      console.log(appkit.terminal.markdown(`\n^^Successfully created test "${args.ID}"!^^`));
+      console.log(appkit.terminal.markdown(`\n^^Successfully created test "${args.id}"!^^`));
     } else {
       appkit.terminal.vtable(resp);
     }
@@ -756,10 +804,10 @@ async function newRegister(appkit, args) {
 async function getLogs(appkit, args) {
   let uuid = '';
   try {
-    if (isUUID(args.ID)) {
-      uuid = args.ID;
+    if (isUUID(args.id)) {
+      uuid = args.id;
     } else {
-      const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+      const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, jsonType);
       const { runs } = await appkit.http.get(
         `${DIAGNOSTICS_API_URL}/v1/diagnostic/jobspace/${resp.jobspace}/job/${resp.job}/runs`,
         jsonType,
@@ -776,7 +824,7 @@ async function getLogs(appkit, args) {
 
 async function listRuns(appkit, args) {
   try {
-    const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, jsonType);
     const { runs } = await appkit.http.get(
       `${DIAGNOSTICS_API_URL}/v1/diagnostic/jobspace/${resp.jobspace}/job/${resp.job}/runs`,
       { 'Content-Type': 'application/json' },
@@ -802,7 +850,7 @@ async function updateJob(appkit, args) {
   let property = args.p || args.property;
   let value = args.v || args.value;
   try {
-    const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    const resp = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, jsonType);
 
     if (property === 'command' && value === 'Default command in image') {
       console.log('\nDo you want to use the default command in the specified Docker image?\n');
@@ -848,7 +896,7 @@ async function updateJob(appkit, args) {
 
 async function job(appkit, args) {
   try {
-    const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    const jobItem = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, jsonType);
     if (jobItem.ispreview) {
       console.log(appkit.terminal.markdown('\n###===### !!Preview App Test!! ###===###'));
     }
@@ -884,9 +932,9 @@ async function listConfig(appkit, args) {
   const simple = args.s || args.simple;
   const exports = args.e || args.exports;
   try {
-    const { env } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    const { env } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, jsonType);
     if (!env) {
-      console.log(appkit.terminal.markdown(`\nNo environment variables set on ***${args.ID}***!`));
+      console.log(appkit.terminal.markdown(`\nNo environment variables set on ***${args.id}***!`));
     } else {
       if (!simple && !exports) {
         appkit.terminal.table(env);
@@ -905,17 +953,17 @@ async function listConfig(appkit, args) {
 
 async function deleteTest(appkit, args) {
   try {
-    await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`, jsonType);
+    await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`, jsonType);
   } catch (err) {
     appkit.terminal.error(parseError(err));
     return;
   }
   const del = async (input) => {
     if (input.toLowerCase() === 'y' || input.toLowerCase() === 'yes') {
-      const task = appkit.terminal.task(`Destroying test ${args.ID}`);
+      const task = appkit.terminal.task(`Destroying test ${args.id}`);
       task.start();
       try {
-        await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.ID}`);
+        await appkit.api.delete(`${DIAGNOSTICS_API_URL}/v1/diagnostic/${args.id}`);
         task.end('ok');
       } catch (err) {
         task.end('error');
@@ -925,7 +973,7 @@ async function deleteTest(appkit, args) {
       appkit.terminal.soft_error('Test deletion aborted');
     }
   };
-  appkit.terminal.confirm(`\n~~▸~~  WARNING: This will delete the test **${args.ID}**!\n~~▸~~  Please type "yes" to confirm\n`, del);
+  appkit.terminal.confirm(`\n~~▸~~  WARNING: This will delete the test **${args.id}**!\n~~▸~~  Please type "yes" to confirm\n`, del);
 }
 
 function colorize(text, colorname) { // eslint-disable-line
@@ -984,12 +1032,12 @@ async function list(appkit) {
 
 async function artifacts(appkit, args) {
   try {
-    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.ID}`, plainType);
+    const { _source: source } = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics/runs/info/${args.id}`, plainType);
     if (typeof source.job === 'undefined' || source.job === '') {
       appkit.terminal.error(appkit.terminal.markdown('!!Invalid run ID!!'));
       return;
     }
-    console.log(appkit.terminal.markdown(`\n~~Artifacts:~~ ${DIAGNOSTICS_API_URL}/v1/artifacts/${args.ID}/`));
+    console.log(appkit.terminal.markdown(`\n~~Artifacts:~~ ${DIAGNOSTICS_API_URL}/v1/artifacts/${args.id}/`));
     if (process.platform === 'darwin') {
       console.log(appkit.terminal.markdown('###CMD + Click to open###'));
     }
@@ -1005,7 +1053,7 @@ function formatRun(appkit, run) {
     app: `${run.app}-${run.space}`,
     test: `${run.job}-${run.jobspace}`,
     image: run.image,
-    started: new Date(run.run_on || run.starttime).toLocaleTimeString(),
+    started: new Date(run.run_on || run.starttime).toLocaleString(),
     timeout: run.timeout || 'cron',
   };
 }
@@ -1029,127 +1077,212 @@ async function currentRuns(appkit) {
 function update() {}
 
 function init(appkit) {
-  const updateOpts = {
-    property: {
-      alias: 'p',
-      string: true,
-      description: 'property name (timeout, transitionfrom, env, etc).',
-      choices: [
-        'image', 'pipelinename', 'transitionfrom', 'transitionto',
-        'timeout', 'startdelay', 'slackchannel', 'command', 'testpreviews',
-        'webhookurls',
-      ],
-      demand: true,
-    },
-    value: {
-      alias: 'v',
-      string: true,
-      description: 'new value of the property. If updating slackchannel, do not include leading #',
-      demand: true,
-    },
+  // Add a simple string positional argument with the given name and description
+  const strPositional = (name, desc, args) => {
+    args.positional(name, { description: desc, type: 'string' });
   };
 
-  const secretOpts = {
-    plan: {
-      alias: 'p',
-      string: true,
-      description: 'plan name (example: xisoap-ws:dev)',
-      demand: true,
-    },
+  // Allow old syntax to be used
+  if (process.env.TAAS_OLD_COMMANDS === 'true') {
+    const updateOpts = {
+      property: {
+        alias: 'p',
+        string: true,
+        description: 'property name (timeout, transitionfrom, env, etc).',
+        choices: [
+          'image', 'pipelinename', 'transitionfrom', 'transitionto',
+          'timeout', 'startdelay', 'slackchannel', 'command', 'testpreviews',
+          'webhookurls',
+        ],
+        demand: true,
+      },
+      value: {
+        alias: 'v',
+        string: true,
+        description: 'new value of the property. If updating slackchannel, do not include leading #',
+        demand: true,
+      },
+    };
+
+    const secretOpts = {
+      plan: {
+        alias: 'p',
+        string: true,
+        description: 'plan name (example: xisoap-ws:dev)',
+        demand: true,
+      },
+    };
+
+    const listConfigOpts = {
+      simple: {
+        alias: 's',
+        boolean: true,
+        description: 'show as simple list',
+        demand: false,
+      },
+      exports: {
+        alias: 'e',
+        boolean: true,
+        description: 'show as exports',
+        demand: false,
+      },
+    };
+
+    appkit.args
+      .command('taas:tests', 'List tests', {}, list.bind(null, appkit))
+      .command('taas:images', 'List images', {}, images.bind(null, appkit))
+      .command('taas:tests:info ID', 'Describe test', {}, job.bind(null, appkit))
+      .command('taas:tests:register', 'Register test', {}, newRegister.bind(null, appkit))
+      .command('taas:tests:update ID', 'Update test', updateOpts, updateJob.bind(null, appkit))
+      .command('taas:tests:destroy ID', 'Delete test', {}, deleteTest.bind(null, appkit))
+      .command('taas:tests:trigger ID', 'Trigger a test', {}, trigger.bind(null, appkit))
+      .command('taas:tests:runs ID', 'List test runs', {}, listRuns.bind(null, appkit))
+      .command('taas:config ID', 'List environment variables', listConfigOpts, listConfig.bind(null, appkit))
+      .command('taas:config:set ID KVPAIR', 'Set an environment variable', {}, setVar.bind(null, appkit))
+      .command('taas:config:unset ID VAR', 'Unset an environment variable', {}, unsetVar.bind(null, appkit))
+      .command('taas:secret:create ID', 'Add a secret to a test', secretOpts, addSecret.bind(null, appkit))
+      .command('taas:secret:remove ID', 'Remove a secret from a test', secretOpts, removeSecret.bind(null, appkit))
+      .command('taas:hooks:create ID', 'Add testing hooks to a test\'s target app', {}, addHooks.bind(null, appkit))
+      .command('taas:runs:info ID', 'Get info for a run', {}, runInfo.bind(null, appkit))
+      .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
+      .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
+      .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
+      .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
+      .command('taas:running', 'List currently running tests', {}, currentRuns.bind(null, appkit))
+      .command('taas:runs:current', false, {}, currentRuns.bind(null, appkit)); // alias
+  } else {
+    // New syntax, including revamped help descriptions
+
+    // Command Builder Functions
+
+    const updateBuilder = (args) => {
+      strPositional('id', 'Test ID or name', args);
+      strPositional('value', 'New value for property (no # on slack channel)', args);
+      args.positional('property', {
+        description: '- Name of property to update',
+        type: 'string',
+        choices: [
+          'image', 'pipelinename', 'transitionfrom', 'transitionto', 'timeout', 'startdelay',
+          'slackchannel', 'command', 'testpreviews', 'webhookurls',
+        ],
+      });
+    };
+
+    const configBuilder = (args) => {
+      strPositional('id', 'Test ID or name', args);
+      args.option('simple', {
+        alias: 's',
+        type: 'boolean',
+        description: 'Show as a simple list',
+        demand: false,
+        conflicts: 'exports',
+      });
+      args.option('exports', {
+        alias: 'e',
+        type: 'boolean',
+        description: 'Show as exports',
+        demand: false,
+        conflicts: 'simple',
+      });
+    };
+
+    const configSetBuilder = (args) => {
+      strPositional('id', 'Test ID or name', args);
+      strPositional('kvpair', 'Key=value pair to set as environment variable', args);
+    };
+
+    const configUnsetBuilder = (args) => {
+      strPositional('id', 'Test ID or name', args);
+      strPositional('var', 'Name of environment variable to unset', args);
+    };
+
+    const secretBuilder = (args) => {
+      strPositional('id', 'Test ID or name', args);
+      strPositional('plan', 'Plan name (e.g. xisoap-ws:dev)', args);
+    };
+
+    appkit.args
+      // Tests
+      .command('taas', 'List tests', {}, list.bind(null, appkit))
+      .command('taas:info <id|name>', 'Describe test', strPositional.bind(null, 'id', 'Test ID or name'), job.bind(null, appkit))
+      .command('taas:register', 'Register new test', {}, newRegister.bind(null, appkit))
+      .command('taas:update <id|name> <property> <value>', 'Update test', updateBuilder, updateJob.bind(null, appkit))
+      .command('taas:destroy <id|name>', 'Delete test', strPositional.bind(null, 'id', 'Test ID or name'), deleteTest.bind(null, appkit))
+      .command('taas:trigger <id|name>', 'Trigger a test', strPositional.bind(null, 'id', 'Test ID or name'), trigger.bind(null, appkit))
+      // Environment Variables
+      .command('taas:config <id|name>', 'List environment variables', configBuilder, listConfig.bind(null, appkit))
+      .command('taas:config:set <id|name> <kvpair>', 'Set an environment variable', configSetBuilder, setVar.bind(null, appkit))
+      .command('taas:config:unset <id|name> <var>', 'Unset an environment variable', configUnsetBuilder, unsetVar.bind(null, appkit))
+      // Runs
+      .command('taas:runs <id|name>', 'List test runs', strPositional.bind(null, 'id', 'Test ID or name'), listRuns.bind(null, appkit))
+      .command('taas:runs:info <id>', 'Get info for a run', strPositional.bind(null, 'id', 'Run ID'), runInfo.bind(null, appkit))
+      .command('taas:runs:output <id|name>', 'Get logs for a run. If ID is a test name, gets latest', strPositional.bind(null, 'id', 'Run ID or test name'), getLogs.bind(null, appkit))
+      .command('taas:logs <id|name>', 'Get logs for a run. If ID is a test name, gets latest', strPositional.bind(null, 'id', 'Run ID or test name'), getLogs.bind(null, appkit)) // shown alias
+      .command('taas:runs:rerun <id>', 'Reruns a run', strPositional.bind(null, 'id', 'Run ID'), reRun.bind(null, appkit))
+      .command('taas:runs:artifacts <id>', 'Get link to view artifacts for a run', strPositional.bind(null, 'id', 'Run ID'), artifacts.bind(null, appkit))
+      // Misc
+      .command('taas:images', 'List images', {}, images.bind(null, appkit))
+      .command('taas:hooks:create <id|name>', 'Add testing hooks to a test\'s target app', strPositional.bind(null, 'id', 'Test ID or name'), addHooks.bind(null, appkit))
+      .command('taas:running', 'List currently running tests', {}, currentRuns.bind(null, appkit))
+      .command('taas:runs:current', false, {}, currentRuns.bind(null, appkit)) // alias
+      .command('taas:secret:create <id|name> <plan>', 'Add a secret to a test', secretBuilder, addSecret.bind(null, appkit))
+      .command('taas:secret:remove <id|name> <plan>', 'Remove a secret from a test', secretBuilder, removeSecret.bind(null, appkit));
+  }
+
+  // Cron commands
+
+  const cronCreateBuilder = (args) => {
+    strPositional('id', 'Test ID or name', args);
+    strPositional('cronspec', 'Cronjob schedule (see https://cron.help)', args);
+    strPositional('command', 'Alternate command for container (override)', args);
   };
 
-  const listConfigOpts = {
-    simple: {
-      alias: 's',
-      boolean: true,
-      description: 'show as simple list',
-      demand: false,
-    },
-    exports: {
-      alias: 'e',
-      boolean: true,
-      description: 'show as exports',
-      demand: false,
-    },
-  };
-
-  const multiSetOpts = {
-    suffix: {
-      alias: 's',
-      string: true,
-      description: 'filter by suffix',
-      demand: false,
-    },
-    prefix: {
-      alias: 'p',
-      string: true,
-      description: 'filter by prefix',
-      demand: false,
-    },
-  };
-  const cronOpts = {
-    cronspec: {
-      alias: 's',
-      string: true,
-      description: 'cronjob schedule',
-      demand: true,
-    },
-    command: {
-      alias: 'c',
-      string: true,
-      description: 'cronjob alternate command to container',
-      demand: false,
-    },
-  };
-
-  const cronRunsOpts = {
-    number: {
-      alias: 'n',
-      string: true,
-      description: 'number of runs',
-      demand: false,
-    },
-    filter: {
+  const cronRunsBuilder = (args) => {
+    args.positional('id', { description: 'Test ID or name', type: 'string' });
+    args.option('number', {
+      description: 'Number of runs', type: 'string', alias: 'n', demand: false,
+    });
+    args.option('filter', {
       alias: 'f',
-      string: true,
-      descriptioon: 'filter',
+      type: 'string',
+      description: 'Filter by status',
       choices: ['failed', 'success', 'pass', 'borked', 'fail', 'passed', 'pizzled'],
       demand: false,
-    },
+    });
   };
 
-  appkit.args
-    .command('taas:tests', 'List tests', {}, list.bind(null, appkit))
-    .command('taas:images', 'List images', {}, images.bind(null, appkit))
-    .command('taas:tests:info ID', 'Describe test', {}, job.bind(null, appkit))
-    .command('taas:tests:register', 'Register test', {}, newRegister.bind(null, appkit))
-    .command('taas:tests:update ID', 'Update test', updateOpts, updateJob.bind(null, appkit))
-    .command('taas:tests:destroy ID', 'Delete test', {}, deleteTest.bind(null, appkit))
-    .command('taas:tests:trigger ID', 'Trigger a test', {}, trigger.bind(null, appkit))
-    .command('taas:tests:runs ID', 'List test runs', {}, listRuns.bind(null, appkit))
-    .command('taas:config ID', 'List environment variables', listConfigOpts, listConfig.bind(null, appkit))
-    .command('taas:config:set ID KVPAIR', 'Set an environment variable', {}, setVar.bind(null, appkit))
-    .command('taas:config:unset ID VAR', 'Unset an environment variable', {}, unsetVar.bind(null, appkit))
-    .command('taas:secret:create ID', 'Add a secret to a test', secretOpts, addSecret.bind(null, appkit))
-    .command('taas:secret:remove ID', 'Remove a secret from a test', secretOpts, removeSecret.bind(null, appkit))
-    .command('taas:hooks:create ID', 'Add testing hooks to a test\'s target app', {}, addHooks.bind(null, appkit))
-    .command('taas:runs:info ID', 'Get info for a run', {}, runInfo.bind(null, appkit))
-    .command('taas:runs:output ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
-    .command('taas:runs:rerun ID', 'Reruns a run', {}, reRun.bind(null, appkit))
-    .command('taas:runs:artifacts ID', 'Get link to view artifacts for a run', {}, artifacts.bind(null, appkit))
-    .command('taas:logs ID', 'Get logs for a run. If ID is a test name, gets latest', {}, getLogs.bind(null, appkit))
-    .command('taas:running', 'List currently running tests', {}, currentRuns.bind(null, appkit))
-    .command('taas:runs:current', false, {}, currentRuns.bind(null, appkit)); // alias
+  appkit.args.command('taas:cron', 'List cronjobs', {}, getcronjobs.bind(null, appkit));
+  appkit.args.command('taas:cron:create <id|name> <cronspec> [command]', 'Create new cronjob for a test', cronCreateBuilder, createcronjob.bind(null, appkit));
+  appkit.args.command('taas:cron:destroy <id>', 'Delete existing cronjob', strPositional.bind(null, 'id', 'Cronjob ID'), destroycronjob.bind(null, appkit));
+  appkit.args.command('taas:cron:runs <id>', 'List runs for a cronjob', cronRunsBuilder, getcronjobruns.bind(null, appkit));
+  appkit.args.command('taas:cron:info <id>', 'Get info on a cronjob', strPositional.bind(null, 'id', 'Cronjob ID'), getCronjob.bind(null, appkit));
+  appkit.args.command('taas:cron:enable <id>', 'Enable future cronjob runs', strPositional.bind(null, 'id', 'Cronjob ID'), enableCron.bind(null, appkit));
+  appkit.args.command('taas:cron:disable <id>', 'Disable future cronjob runs', strPositional.bind(null, 'id', 'Cronjob ID'), disableCron.bind(null, appkit));
+
 
   if (process.env.TAAS_BETA === 'true') {
+    const multiSetOpts = {
+      suffix: {
+        alias: 's',
+        string: true,
+        description: 'filter by suffix',
+        demand: false,
+      },
+      prefix: {
+        alias: 'p',
+        string: true,
+        description: 'filter by prefix',
+        demand: false,
+      },
+    };
     appkit.args.command('taas:config:multiset KVPAIR', 'BETA: set an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiSet.bind(null, appkit));
     appkit.args.command('taas:config:multiunset KEY', 'BETA: unset an environment variable across multiple tests by prefix or suffix', multiSetOpts, multiUnSet.bind(null, appkit));
     appkit.args.command('taas:tests:audits ID', 'BETA: Get audits for a test', {}, audits.bind(null, appkit));
     appkit.args.command('taas:tail ID', 'BETA: Tail Logs', {}, taillogs.bind(null, appkit));
-    appkit.args.command('taas:cron:jobs', 'BETA: Get cronjobs', {}, getcronjobs.bind(null, appkit));
-    appkit.args.command('taas:cron:destroy ID', 'BETA: Destroy cronjob give cron job ID', {}, destroycronjob.bind(null, appkit));
-    appkit.args.command('taas:cron:create ID', 'BETA: Create cronjob', cronOpts, createcronjob.bind(null, appkit));
-    appkit.args.command('taas:cron:runs ID', 'BETA: Get cronjob runs', cronRunsOpts, getcronjobruns.bind(null, appkit));
+  }
+
+  if (appkit.random_tips) {
+    appkit.random_tips.push(appkit.terminal.markdown('🚀 Pro tip: set the environment variable ~~TAAS_OLD_COMMANDS~~ to true to use the old Taas syntax!'));
   }
 }
 
