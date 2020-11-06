@@ -1008,7 +1008,7 @@ async function list(appkit) {
   try {
     const tests = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
     if (!tests || tests.length === 0) {
-      appkit.terminal.error(appkit.terminal.markdown('No tests found. Register a test with ^^aka taas:tests:register^^'));
+      appkit.terminal.error(appkit.terminal.markdown('No tests found. Register a test with ^^aka taas:register^^'));
       return;
     }
     appkit.terminal.table(tests.map(test => ({
