@@ -426,7 +426,7 @@ async function trigger(appkit, args) {
       release: { result, id: releases.length > 0 ? releases.pop().id : '' },
       build: { id: builds.length > 0 ? builds.pop().id : '' },
     };
-    await appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/releasehook`);
+    await appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/${action}hook`);
     console.log(appkit.terminal.markdown('^^ run initiated ^^'));
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -720,12 +720,6 @@ async function newRegister(appkit, args) {
       validate: isInteger,
     },
     {
-      name: 'startDelay',
-      type: 'number',
-      message: 'Start Delay:',
-      validate: isInteger,
-    },
-    {
       name: 'slackChannel',
       type: 'input',
       message: 'Slack Channel (no leading #):',
@@ -758,7 +752,7 @@ async function newRegister(appkit, args) {
     const diagnostic = {
       app: answers.app.split('-')[0],
       space: answers.app.split('-').slice(1).join('-'),
-      action: 'release',
+      action: 'released',
       result: 'succeeded',
       job: answers.job,
       jobspace: answers.jobSpace,
@@ -768,7 +762,7 @@ async function newRegister(appkit, args) {
       transitionfrom: answers.autoPromote ? answers.transitionFrom.replace(' ', '') : 'manual',
       transitionto: answers.autoPromote ? answers.transitionTo.replace(' ', '') : 'manual',
       timeout: answers.timeout,
-      startdelay: answers.startDelay,
+      startdelay: 0,
       slackchannel: answers.slackChannel,
       testpreviews: answers.testPreviews,
       webhookurls: answers.webhookURLs,
