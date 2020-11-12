@@ -523,7 +523,7 @@ async function newRegister(appkit, args) {
   let pipelineStages;
   let pipelines;
   let overrideButWantedDefaultCommand = false;
-  let hasReleasedHook;
+  let releasedHookEndpointExists;
 
   // Validator functions for user prompts
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
@@ -612,9 +612,9 @@ async function newRegister(appkit, args) {
 
     try {
       await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/releasedhook`, plainType);
-      hasReleasedHook = true;
+      releasedHookEndpointExists = true;
     } catch (err) {
-      hasReleasedHook = false;
+      releasedHookEndpointExists = false;
     }
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -731,7 +731,7 @@ async function newRegister(appkit, args) {
       name: 'startDelay',
       type: 'number',
       message: 'Start Delay:',
-      when: !hasReleasedHook,
+      when: !releasedHookEndpointExists,
       validate: isInteger,
     },
     {
@@ -767,7 +767,7 @@ async function newRegister(appkit, args) {
     const diagnostic = {
       app: answers.app.split('-')[0],
       space: answers.app.split('-').slice(1).join('-'),
-      action: hasReleasedHook ? 'released' : 'release',
+      action: releasedHookEndpointExists ? 'released' : 'release',
       result: 'succeeded',
       job: answers.job,
       jobspace: answers.jobSpace,
