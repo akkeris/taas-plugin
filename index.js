@@ -523,7 +523,7 @@ async function newRegister(appkit, args) {
   let pipelineStages;
   let pipelines;
   let overrideButWantedDefaultCommand = false;
-  let releasedHookEndpointExists;
+  let releasedHookEndpointExists = true;
 
   // Validator functions for user prompts
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
@@ -610,11 +610,13 @@ async function newRegister(appkit, args) {
     }, []);
     pipelines.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 
+    // Ping /v1/releasedhook endpoint to see if it exists
     try {
       await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/releasedhook`, plainType);
-      releasedHookEndpointExists = true;
     } catch (err) {
-      releasedHookEndpointExists = false;
+      if (err.code === 404) {
+        releasedHookEndpointExists = false;
+      }
     }
   } catch (err) {
     appkit.terminal.error(parseError(err));
