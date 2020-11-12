@@ -426,7 +426,7 @@ async function trigger(appkit, args) {
       release: { result, id: releases.length > 0 ? releases.pop().id : '' },
       build: { id: builds.length > 0 ? builds.pop().id : '' },
     };
-    await appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/releasehook`);
+    await appkit.api.post(JSON.stringify(hook), `${DIAGNOSTICS_API_URL}/v1/${action}hook`);
     console.log(appkit.terminal.markdown('^^ run initiated ^^'));
   } catch (err) {
     appkit.terminal.error(parseError(err));
@@ -523,6 +523,7 @@ async function newRegister(appkit, args) {
   let pipelineStages;
   let pipelines;
   let overrideButWantedDefaultCommand = false;
+  let releasedHookEndpointExists = true;
 
   // Validator functions for user prompts
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
@@ -608,6 +609,15 @@ async function newRegister(appkit, args) {
       }]);
     }, []);
     pipelines.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+    // Ping /v1/releasedhook endpoint to see if it exists
+    try {
+      await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/releasedhook`, plainType);
+    } catch (err) {
+      if (err.code === 404) {
+        releasedHookEndpointExists = false;
+      }
+    }
   } catch (err) {
     appkit.terminal.error(parseError(err));
   }
@@ -723,6 +733,7 @@ async function newRegister(appkit, args) {
       name: 'startDelay',
       type: 'number',
       message: 'Start Delay:',
+      when: !releasedHookEndpointExists,
       validate: isInteger,
     },
     {
@@ -758,7 +769,7 @@ async function newRegister(appkit, args) {
     const diagnostic = {
       app: answers.app.split('-')[0],
       space: answers.app.split('-').slice(1).join('-'),
-      action: 'release',
+      action: releasedHookEndpointExists ? 'released' : 'release',
       result: 'succeeded',
       job: answers.job,
       jobspace: answers.jobSpace,
@@ -768,7 +779,7 @@ async function newRegister(appkit, args) {
       transitionfrom: answers.autoPromote ? answers.transitionFrom.replace(' ', '') : 'manual',
       transitionto: answers.autoPromote ? answers.transitionTo.replace(' ', '') : 'manual',
       timeout: answers.timeout,
-      startdelay: answers.startDelay,
+      startdelay: answers.startDelay || 0,
       slackchannel: answers.slackChannel,
       testpreviews: answers.testPreviews,
       webhookurls: answers.webhookURLs,
@@ -1014,7 +1025,7 @@ async function list(appkit) {
   try {
     const tests = await appkit.http.get(`${DIAGNOSTICS_API_URL}/v1/diagnostics?simple=true`, jsonType);
     if (!tests || tests.length === 0) {
-      appkit.terminal.error(appkit.terminal.markdown('No tests found. Register a test with ^^aka taas:tests:register^^'));
+      appkit.terminal.error(appkit.terminal.markdown('No tests found. Register a test with ^^aka taas:register^^'));
       return;
     }
     appkit.terminal.table(tests.map(test => ({
