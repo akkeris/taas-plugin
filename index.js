@@ -523,6 +523,7 @@ async function newRegister(appkit, args) {
   let pipelineStages;
   let pipelines;
   let overrideButWantedDefaultCommand = false;
+  let hasReleasedHook;
 
   // Validator functions for user prompts
   const isRequired = input => (input.length > 0 ? true : 'Required Field');
@@ -608,6 +609,13 @@ async function newRegister(appkit, args) {
       }]);
     }, []);
     pipelines.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+    try {
+      await appkit.http.post('', `${DIAGNOSTICS_API_URL}/v1/releasedhook`, plainType);
+      hasReleasedHook = true;
+    } catch (err) {
+      hasReleasedHook = false;
+    }
   } catch (err) {
     appkit.terminal.error(parseError(err));
   }
@@ -720,6 +728,13 @@ async function newRegister(appkit, args) {
       validate: isInteger,
     },
     {
+      name: 'startDelay',
+      type: 'number',
+      message: 'Start Delay:',
+      when: !hasReleasedHook,
+      validate: isInteger,
+    },
+    {
       name: 'slackChannel',
       type: 'input',
       message: 'Slack Channel (no leading #):',
@@ -752,7 +767,7 @@ async function newRegister(appkit, args) {
     const diagnostic = {
       app: answers.app.split('-')[0],
       space: answers.app.split('-').slice(1).join('-'),
-      action: 'released',
+      action: hasReleasedHook ? 'released' : 'release',
       result: 'succeeded',
       job: answers.job,
       jobspace: answers.jobSpace,
@@ -762,7 +777,7 @@ async function newRegister(appkit, args) {
       transitionfrom: answers.autoPromote ? answers.transitionFrom.replace(' ', '') : 'manual',
       transitionto: answers.autoPromote ? answers.transitionTo.replace(' ', '') : 'manual',
       timeout: answers.timeout,
-      startdelay: 0,
+      startdelay: answers.startDelay || 0,
       slackchannel: answers.slackChannel,
       testpreviews: answers.testPreviews,
       webhookurls: answers.webhookURLs,
