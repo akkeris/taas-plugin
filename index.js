@@ -60,12 +60,14 @@ async function getcronjobs(appkit) {
     }
 
     appkit.terminal.table(results.map((cronjob) => {
+      const disabled = (typeof cronjob.disabled !== 'undefined' && cronjob.disabled !== null)
+        ? cronjob.disabled.toString() : null;
       const entry = {
         id: cronjob.id,
         job: `${cronjob.job}-${cronjob.jobspace}`,
         cronspec: cronjob.cronspec,
         command: cronjob.command,
-        disabled: cronjob.disabled.toString(),
+        disabled,
         prev: cronjob.prev === '0001-01-01T00:00:00Z' ? '--' : cronjob.prev,
         next: cronjob.next === '0001-01-01T00:00:00Z' ? '--' : cronjob.next,
       };
@@ -120,12 +122,14 @@ async function getCronjob(appkit, args) {
     const cronjob = await appkit.api.get(`${DIAGNOSTICS_API_URL}/v1/cronjob/${args.id}`);
 
     console.log(appkit.terminal.markdown(`^^ Cronjob Info ^^ ${cronjob.disabled && '!!(disabled)!!'}`));
+    const disabled = (typeof cronjob.disabled !== 'undefined' && cronjob.disabled !== null)
+      ? cronjob.disabled.toString() : null;
     appkit.terminal.vtable({
       id: cronjob.id,
       job: `${cronjob.job}-${cronjob.jobspace}`,
       cronspec: cronjob.cronspec,
       command: cronjob.command ? `"${cronjob.command}"` : appkit.terminal.markdown('###Default command in image###'),
-      disabled: cronjob.disabled.toString(),
+      disabled,
       prev: cronjob.prev === '0001-01-01T00:00:00Z' ? '--' : cronjob.prev,
       next: cronjob.next === '0001-01-01T00:00:00Z' ? '--' : cronjob.next,
     });
